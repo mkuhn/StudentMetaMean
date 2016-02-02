@@ -20,8 +20,6 @@ getLF <- function(row) {
     exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
     # Exact calculation of product of Student's t and normal distribution
     exact_sum = function(x, mean, sigma) -dstudent(x, nu, means, sigmas, log=T)-dnorm(x, mean, sigma, log=T),
-    # Optmized version of the product, having dropped all factors that do not depend on x
-    fast = function(x, mean, sigma) (x - mean)^2 + sigma^2 * (1 + nu) * log(((x - means)/sigmas)^2 + nu),
     means = means,
     sigmas = sigmas,
     nu = nu
@@ -39,14 +37,7 @@ lfMetaMean <- function(P, likelihood_functions) {
 
   sum(sapply(likelihood_functions,
              function(l) {
-               means <- l$means
-               if (means < mean_total) {
-                 interval <- c(means, mean_total)
-               } else {
-                 interval <- c(mean_total, means)
-               }
-
-               x <- optimise(l$fast, interval, mean = mean_total, sigma = sigma_total)$minimum
+               x <- optimise_overlap(mean_total, sigma_total, l$nu, l$means, l$sigmas)
                l$exact_sum( x, mean_total, sigma_total )
              }
   )) - log(sigma_total)
@@ -58,10 +49,24 @@ lfCombineMean <- function(mean_total, likelihood_functions) {
 
 
 #' @export
-studentMetaMean <- function(design) {
+studentMetaMean <- function(design, min_sigma = 0.001) {
 
   design_matrix <- as.matrix( design[ , c("mean", "sigma", "nu") ])
   likelihood_functions <- apply(design_matrix, 1, getLF)
 
-  optim(c(0, 1), lfMetaMean, likelihood_functions = likelihood_functions)
+  # first optimisation using both free mean and sigma
+  o <- optim(c(mean(design_matrix[,1]), sd(design_matrix[,1])),
+        lfMetaMean,
+        likelihood_functions = likelihood_functions)
+
+  l <- list()
+
+  # if sigma is very small, compute weighted average
+  if (o$par[2] < min_sigma) {
+    l$mean <- optimise(lfCombineMean, range(design_matrix[,1]))$minimum
+    l$sigma <- 0
+  } else {
+    l$mean <- o$par[1]
+    l$sigma <- o$par[2]
+  }
 }
