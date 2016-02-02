@@ -9,6 +9,8 @@ dstudent <- function(x, nu, mean, sigma, log = FALSE) {
   }
 }
 
+qstudent <- function(p, nu, mean, sigma) (qt(p, nu)*sigma+mean)
+
 getLF <- function(row) {
 
   means <- row[1]
@@ -22,29 +24,29 @@ getLF <- function(row) {
     exact_sum = function(x, mean, sigma) -dstudent(x, nu, means, sigmas, log=T)-dnorm(x, mean, sigma, log=T),
     means = means,
     sigmas = sigmas,
-    nu = nu
+    nu = nu,
+    xmin = qstudent(0.005, nu, means, sigmas),
+    xmax = qstudent(1-0.005, nu, means, sigmas)
   )
 }
 
 
-INF <- .Machine$double.xmax/100
-
-lfMetaMean <- function(P, likelihood_functions) {
-  mean_total <- P[1]
-  sigma_total <- P[2]
+lfMetaMean <- function(P, likelihood_functions, INF) {
+  mean_total <- P[[1]]
+  sigma_total <- P[[2]]
 
   if (sigma_total <= 0) return(INF)
 
-  sum(sapply(likelihood_functions,
+  colSums(do.call(rbind, (lapply(likelihood_functions,
              function(l) {
                x <- optimise_overlap(mean_total, sigma_total, l$nu, l$means, l$sigmas)
                l$exact_sum( x, mean_total, sigma_total )
              }
-  )) - log(sigma_total)
+  )))) - log(sigma_total)
 }
 
 lfCombineMean <- function(mean_total, likelihood_functions) {
-  sum(sapply(likelihood_functions, function(l) l$exact(mean_total)))
+  colSums(do.call(rbind, (lapply(likelihood_functions, function(l) l$exact(mean_total)))))
 }
 
 
@@ -54,19 +56,108 @@ studentMetaMean <- function(design, min_sigma = 0.001) {
   design_matrix <- as.matrix( design[ , c("mean", "sigma", "nu") ])
   likelihood_functions <- apply(design_matrix, 1, getLF)
 
+  INF <- .Machine$double.xmax/(1+length(likelihood_functions))
+
   # first optimisation using both free mean and sigma
   o <- optim(c(mean(design_matrix[,1]), sd(design_matrix[,1])),
         lfMetaMean,
-        likelihood_functions = likelihood_functions)
+        likelihood_functions = likelihood_functions,
+        INF=INF
+      )
 
-  l <- list()
+  # print(o)
+
+  l <- list(
+    xmin = min(sapply(likelihood_functions, function(l) l$xmin)),
+    xmax = max(sapply(likelihood_functions, function(l) l$xmax)),
+    likelihood_functions = likelihood_functions
+  )
 
   # if sigma is very small, compute weighted average
   if (o$par[2] < min_sigma) {
-    l$mean <- optimise(lfCombineMean, range(design_matrix[,1]))$minimum
+    l$mean <- optimise(lfCombineMean, range(design_matrix[,1]), likelihood_functions=likelihood_functions)$minimum
     l$sigma <- 0
+    l$lf <- function(mean_total) lfCombineMean(mean_total, likelihood_functions)
   } else {
     l$mean <- o$par[1]
     l$sigma <- o$par[2]
+    l$lf <- function(mean_total) lfMetaMean(list(mean_total, l$sigma), likelihood_functions, INF)
   }
+
+  l
 }
+
+#' @export
+findHDI <- function(l, p = 0.95, stepsize = 0.01) {
+
+  xmin <- floor(l$xmin/stepsize)*stepsize
+  xmax <- ceiling(l$xmax/stepsize)*stepsize
+  xmid <- round(l$mean/stepsize)*stepsize
+
+  X <- seq(xmin, xmax, stepsize)
+  Y <- exp(-l$lf(X))
+
+  target <- p*(sum(Y, na.rm=T))
+
+  mid <- (xmid-xmin)/stepsize+1
+
+  i <- mid
+  j <- mid
+  vi <- Y[i]
+  vj <- Y[j]
+
+  s <- 0
+
+  while (s < target) {
+    if (vi > vj) {
+      i <- i-1
+      s <- s + vi/2
+      vi <- Y[i]
+      s <- s + vi/2
+    } else {
+      j <- j+1
+      s <- s + vj/2
+      vj <- Y[j]
+      s <- s + vj/2
+    }
+  }
+
+  if (j-i < 10) message("Step size may be too small!")
+
+  c( xmin+stepsize*(i-0.5), xmin + stepsize*(j-0.5))
+}
+
+#' @export
+plotMetaMean <- function(l, p = 0.95, stepsize=0.1) {
+
+  likelihood_functions <- l$likelihood_functions
+  xmin <- floor(l$xmin/stepsize)*stepsize
+  xmax <- ceiling(l$xmax/stepsize)*stepsize
+
+  X <- seq(xmin, xmax, stepsize)
+
+  d <- rbind(
+    data.frame(x=X, y=exp(-l$lf(X)), kind="metaMean", n = 0),
+    do.call(rbind, lapply(1:length(likelihood_functions),
+         function(i) data.frame(x=X, y=exp(-likelihood_functions[[i]]$exact(X)), kind="input", n = i))
+    )
+  )
+
+  hdi <- findHDI(l, p, stepsize)
+
+  d$n <- factor(d$n)
+  dm <- d[ d$n == 0, ]
+  dm <- dm[ dm$x >= hdi[1] & dm$x <= hdi[2], ]
+
+  dm0 <- dm[1,]
+  dm0$y <- 0
+  dmN <- dm[nrow(dm),]
+  dmN$y <- 0
+
+  dm <- rbind(dm0, dm, dmN)
+
+  p <- ggplot2::ggplot(d, aes(x, y, color=n, fill=n)) + geom_line() + facet_grid(kind~., scales = "free")
+  p <- p + geom_polygon(data=dm)
+  p + geom_vline(xintercept=l$mean)
+}
+

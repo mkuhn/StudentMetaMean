@@ -6,12 +6,12 @@
 using namespace Rcpp;
 
 // optimise_overlap
-double optimise_overlap(double meann, double sigman, double nu, double means, double sigmas);
+NumericVector optimise_overlap(NumericVector meann, double sigman, double nu, double means, double sigmas);
 RcppExport SEXP studentMetaMean_optimise_overlap(SEXP meannSEXP, SEXP sigmanSEXP, SEXP nuSEXP, SEXP meansSEXP, SEXP sigmasSEXP) {
 BEGIN_RCPP
     Rcpp::RObject __result;
     Rcpp::RNGScope __rngScope;
-    Rcpp::traits::input_parameter< double >::type meann(meannSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type meann(meannSEXP);
     Rcpp::traits::input_parameter< double >::type sigman(sigmanSEXP);
     Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
     Rcpp::traits::input_parameter< double >::type means(meansSEXP);
