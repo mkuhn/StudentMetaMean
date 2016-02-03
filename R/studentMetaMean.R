@@ -11,6 +11,15 @@ dstudent <- function(x, nu, mean, sigma, log = FALSE) {
 
 qstudent <- function(p, nu, mean, sigma) (qt(p, nu)*sigma+mean)
 
+safe_range <- function(v) {
+  r <- range(v)
+  if (r[1] == r[2]) {
+    r[1] <- r[1] - 0.01
+    r[2] <- r[2] + 0.01
+  }
+  r
+}
+
 getLF <- function(row) {
 
   means <- row[1]
@@ -20,6 +29,8 @@ getLF <- function(row) {
   list(
     # Exact density function
     exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
+    # Faster function with same minimum as exact sum
+    fast = function(x, mean, sigma) (x - mean)^2 + sigma^2 * (1 + nu) * log(((x - means)/sigmas)^2 + nu),
     # Exact calculation of product of Student's t and normal distribution
     exact_sum = function(x, mean, sigma) -dstudent(x, nu, means, sigmas, log=T)-dnorm(x, mean, sigma, log=T),
     means = means,
@@ -40,6 +51,11 @@ lfMetaMean <- function(P, likelihood_functions, INF, min_sigma) {
   colSums(do.call(rbind, (lapply(likelihood_functions,
              function(l) {
                x <- optimise_overlap(mean_total, sigma_total, l$nu, l$means, l$sigmas)
+               # sometimes the exact solution doesn't work, optimise to get these values
+               m <- which(is.na(x))
+               for (i in m) {
+                  x[i] <- optimise(l$fast, safe_range(c(mean_total[i], l$means)), mean=mean_total[i], sigma=sigma_total)$minimu
+               }
                l$exact_sum( x, mean_total, sigma_total )
              }
   )))) - log(sigma_total)
@@ -77,7 +93,7 @@ studentMetaMean <- function(design, min_sigma = 1) {
   }
 
   # second optimisation:
-  o2 <- optimise(pMerged, range(design_matrix[,1]), maximum = T)
+  o2 <- optimise(pMerged, safe_range(design_matrix[,1]), maximum = T)
 
   l <- list(
     xmin = min(sapply(likelihood_functions, function(l) l$xmin)),
@@ -100,10 +116,11 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01) {
 
   X <- seq(xmin, xmax, stepsize)
   Y <- l$pMerged(X)
+  N <- length(Y)
 
   target <- p*(sum(Y, na.rm=T))
 
-  mid <- (xmid-xmin)/stepsize+1
+  mid <- as.integer((xmid-xmin)/stepsize+1)
 
   i <- mid
   j <- mid
@@ -115,11 +132,39 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01) {
   while (s < target) {
     if (vi > vj) {
       i <- i-1
+
+      # extend the range if needed
+      if (i == 0) {
+        ext <- as.integer(N/2)
+        xminext <- xmin - stepsize * ext
+        Xext <- seq(xminext, xmin-stepsize, stepsize)
+        X <- c(Xext, X)
+        Y <- c(l$pMerged(Xext), Y)
+        xmin <- xminext
+        i <- i + ext
+        j <- j + ext
+        N <- N + ext
+        target <- p*(sum(Y, na.rm=T))
+      }
+
       s <- s + vi/2
       vi <- Y[i]
       s <- s + vi/2
     } else {
       j <- j+1
+
+      # extend the range if needed
+      if (j > N) {
+        ext <- as.integer(N/2)
+        xmaxext <- xmax + stepsize * ext
+        Xext <- seq(xmax+stepsize, xmaxext, stepsize)
+        X <- c(X, Xext)
+        Y <- c(Y, l$pMerged(Xext))
+        xmax <- xmaxext
+        N <- N + ext
+        target <- p*(sum(Y, na.rm=T))
+      }
+
       s <- s + vj/2
       vj <- Y[j]
       s <- s + vj/2
