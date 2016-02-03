@@ -31,11 +31,11 @@ getLF <- function(row) {
 }
 
 
-lfMetaMean <- function(P, likelihood_functions, INF) {
+lfMetaMean <- function(P, likelihood_functions, INF, min_sigma) {
   mean_total <- P[[1]]
   sigma_total <- P[[2]]
 
-  if (sigma_total <= 0) return(INF)
+  if (sigma_total < min_sigma) return(INF)
 
   colSums(do.call(rbind, (lapply(likelihood_functions,
              function(l) {
@@ -51,39 +51,43 @@ lfCombineMean <- function(mean_total, likelihood_functions) {
 
 
 #' @export
-studentMetaMean <- function(design, min_sigma = 0.001) {
+studentMetaMean <- function(design, min_sigma = 1) {
+
+  if (max(design$nu) > 1000) message("Numerical instabilities may occur for large values of nu")
 
   design_matrix <- as.matrix( design[ , c("mean", "sigma", "nu") ])
+
   likelihood_functions <- apply(design_matrix, 1, getLF)
 
   INF <- .Machine$double.xmax/(1+length(likelihood_functions))
 
-  # first optimisation using both free mean and sigma
-  o <- optim(c(mean(design_matrix[,1]), sd(design_matrix[,1])),
+  # first optimisation using both free mean and sigma to find best sigma
+  o1 <- optim(c(mean(design_matrix[,1]), sd(design_matrix[,1])),
         lfMetaMean,
         likelihood_functions = likelihood_functions,
-        INF=INF
+        INF = INF,
+        min_sigma = min_sigma
       )
 
-  # print(o)
+  sigma_total <- o1$par[2]
+
+  pMerged <- function(mean_total) {
+    exp(-lfMetaMean(list(mean_total, sigma_total), likelihood_functions, INF, min_sigma)) +
+      exp(-lfCombineMean(mean_total, likelihood_functions))
+  }
+
+  # second optimisation:
+  o2 <- optimise(pMerged, range(design_matrix[,1]), maximum = T)
 
   l <- list(
     xmin = min(sapply(likelihood_functions, function(l) l$xmin)),
     xmax = max(sapply(likelihood_functions, function(l) l$xmax)),
-    likelihood_functions = likelihood_functions
+    mean = o2$maximum,
+    likelihood_functions = likelihood_functions,
+    lfMetaMean = lfMetaMean,
+    lfCombineMean = lfCombineMean,
+    pMerged = pMerged
   )
-
-  # if sigma is very small, compute weighted average
-  if (o$par[2] < min_sigma) {
-    l$mean <- optimise(lfCombineMean, range(design_matrix[,1]), likelihood_functions=likelihood_functions)$minimum
-    l$sigma <- 0
-    l$lf <- function(mean_total) lfCombineMean(mean_total, likelihood_functions)
-  } else {
-    l$mean <- o$par[1]
-    l$sigma <- o$par[2]
-    l$lf <- function(mean_total) lfMetaMean(list(mean_total, l$sigma), likelihood_functions, INF)
-  }
-
   l
 }
 
@@ -95,7 +99,7 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01) {
   xmid <- round(l$mean/stepsize)*stepsize
 
   X <- seq(xmin, xmax, stepsize)
-  Y <- exp(-l$lf(X))
+  Y <- l$pMerged(X)
 
   target <- p*(sum(Y, na.rm=T))
 
@@ -137,7 +141,7 @@ plotMetaMean <- function(l, p = 0.95, stepsize=0.1) {
   X <- seq(xmin, xmax, stepsize)
 
   d <- rbind(
-    data.frame(x=X, y=exp(-l$lf(X)), kind="metaMean", n = 0),
+    data.frame(x=X, y=l$pMerged(X), kind="metaMean", n = 0),
     do.call(rbind, lapply(1:length(likelihood_functions),
          function(i) data.frame(x=X, y=exp(-likelihood_functions[[i]]$exact(X)), kind="input", n = i))
     )
