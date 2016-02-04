@@ -3,5 +3,3 @@
 export(findHDI)
 export(plotMetaMean)
 export(studentMetaMean)
-importFrom(Rcpp,sourceCpp)
-useDynLib(studentMetaMean)
