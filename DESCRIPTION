@@ -8,7 +8,4 @@ Maintainer: Who to complain to <yourfault@somewhere.net>
 Description: More about what it does (maybe more than one line)
 License: What license is it under?
 LazyData: TRUE
-LinkingTo: Rcpp, BH
-SystemRequirements: C++11
-Imports: Rcpp, dplyr
 RoxygenNote: 5.0.1
