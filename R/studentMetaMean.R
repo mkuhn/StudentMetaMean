@@ -26,13 +26,15 @@ getLF <- function(row) {
   sigmas <- row[2]
   nu <- row[3]
 
+  D0 <- -dstudent(means, nu, means, sigmas, log=T)
+
   list(
     # Exact density function
     exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
     # Faster function with same minimum as exact sum
     fast = function(x, mean, sigma) (x - mean)^2 + sigma^2 * (1 + nu) * log(((x - means)/sigmas)^2 + nu),
     # Exact calculation of product of Student's t and normal distribution
-    exact_sum = function(x, mean, sigma) -dstudent(x, nu, means, sigmas, log=T)-dnorm(x, mean, sigma, log=T),
+    exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
     means = means,
     sigmas = sigmas,
     nu = nu,
@@ -48,21 +50,13 @@ lfMetaMean <- function(P, likelihood_functions, INF, min_sigma) {
 
   if (sigma_total < min_sigma) return(INF)
 
-  colSums(do.call(rbind, (lapply(likelihood_functions,
-             function(l) {
-               x <- optimise_overlap(mean_total, sigma_total, l$nu, l$means, l$sigmas)
-               # sometimes the exact solution doesn't work, optimise to get these values
-               m <- which(is.na(x))
-               for (i in m) {
-                  x[i] <- optimise(l$fast, safe_range(c(mean_total[i], l$means)), mean=mean_total[i], sigma=sigma_total)$minimu
-               }
-               l$exact_sum( x, mean_total, sigma_total )
-             }
-  )))) - log(sigma_total)
+  L <- lapply(likelihood_functions, function(l) l$exact_sum( mean_total, sigma_total ))
+
+  Reduce("+", L) - log(sigma_total)
 }
 
 lfCombineMean <- function(mean_total, likelihood_functions) {
-  colSums(do.call(rbind, (lapply(likelihood_functions, function(l) l$exact(mean_total)))))
+  Reduce("+", lapply(likelihood_functions, function(l) l$exact(mean_total)))
 }
 
 
@@ -99,21 +93,27 @@ studentMetaMean <- function(design, min_sigma = 1) {
     xmin = min(sapply(likelihood_functions, function(l) l$xmin)),
     xmax = max(sapply(likelihood_functions, function(l) l$xmax)),
     mean = o2$maximum,
+    sigma = sigma_total,
     likelihood_functions = likelihood_functions,
-    lfMetaMean = lfMetaMean,
-    lfCombineMean = lfCombineMean,
     pMerged = pMerged
   )
   l
 }
 
 #' @export
-findHDI <- function(l, p = 0.95, stepsize = 0.01) {
+findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
+
+  xmid <- round(l$mean/stepsize)*stepsize
+
+  # first, check if we need to expand the considered interval
+  ytarget <- density_resolution*l$pMerged(xmid)
+  while (l$pMerged(l$xmin) > ytarget) l$xmin <- l$mean - 1.5 * (l$mean - l$xmin)
+  while (l$pMerged(l$xmax) > ytarget) l$xmax <- l$mean + 1.5 * (l$xmax - l$mean)
 
   xmin <- floor(l$xmin/stepsize)*stepsize
   xmax <- ceiling(l$xmax/stepsize)*stepsize
-  xmid <- round(l$mean/stepsize)*stepsize
 
+  # compute whole interval at once, thanks to the vectorization this is quite fast
   X <- seq(xmin, xmax, stepsize)
   Y <- l$pMerged(X)
   N <- length(Y)
