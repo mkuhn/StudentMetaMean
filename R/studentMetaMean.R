@@ -26,19 +26,40 @@ getLF <- function(row) {
   sigmas <- row[2]
   nu <- row[3]
 
-  D0 <- -dstudent(means, nu, means, sigmas, log=T)
+  if (is.na(nu)) {
+    # normal distribution
 
-  list(
-    # Exact density function
-    exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
-    # Exact calculation of product of Student's t and normal distribution
-    exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
-    means = means,
-    sigmas = sigmas,
-    nu = nu,
-    xmin = qstudent(0.005, nu, means, sigmas),
-    xmax = qstudent(1-0.005, nu, means, sigmas)
-  )
+    D0 <- -dnorm(means, means, sigmas, log=T)
+
+    list(
+      # Exact density function
+      exact = function(x) -dnorm(x, means, sigmas, log=T),
+      # Exact calculation of product of Student's t and normal distribution
+      exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
+      means = means,
+      sigmas = sigmas,
+      nu = nu,
+      xmin = qnorm(0.005, means, sigmas),
+      xmax = qnorm(1-0.005, means, sigmas)
+    )
+
+  } else {
+    # Student's t distribution
+
+    D0 <- -dstudent(means, nu, means, sigmas, log=T)
+
+    list(
+      # Exact density function
+      exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
+      # Exact calculation of product of Student's t and normal distribution
+      exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
+      means = means,
+      sigmas = sigmas,
+      nu = nu,
+      xmin = qstudent(0.005, nu, means, sigmas),
+      xmax = qstudent(1-0.005, nu, means, sigmas)
+    )
+  }
 }
 
 
