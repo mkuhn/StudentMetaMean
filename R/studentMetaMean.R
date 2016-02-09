@@ -31,8 +31,6 @@ getLF <- function(row) {
   list(
     # Exact density function
     exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
-    # Faster function with same minimum as exact sum
-    fast = function(x, mean, sigma) (x - mean)^2 + sigma^2 * (1 + nu) * log(((x - means)/sigmas)^2 + nu),
     # Exact calculation of product of Student's t and normal distribution
     exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
     means = means,
@@ -61,11 +59,16 @@ lfCombineMean <- function(mean_total, likelihood_functions) {
 
 
 #' @export
-studentMetaMean <- function(design, min_sigma = 1) {
+studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NULL, min_sigma = 1) {
 
-  if (max(design$nu) > 1000) message("Numerical instabilities may occur for large values of nu")
+  if (is.null(design)) {
+    if (any(is.null(means), is.null(sigmas), is.null(nus)))
+      stop("Missing either 'design' or 'means'/'simgas'/'nus' argument")
 
-  design_matrix <- as.matrix( design[ , c("mean", "sigma", "nu") ])
+    design_matrix <- matrix( c(means, sigmas, nus), ncol=3)
+  } else {
+    design_matrix <- as.matrix( design[ , c("mean", "sigma", "nu") ])
+  }
 
   likelihood_functions <- apply(design_matrix, 1, getLF)
 
@@ -177,7 +180,11 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
 }
 
 #' @export
-plotMetaMean <- function(l, p = 0.95, stepsize=0.1) {
+plotMetaMean <- function(l, p = 0.95, stepsize=NULL) {
+
+  if (is.null(stepsize)) {
+    stepsize <- (l$xmax - l$xmin) / 1000
+  }
 
   likelihood_functions <- l$likelihood_functions
   xmin <- floor(l$xmin/stepsize)*stepsize
@@ -205,8 +212,8 @@ plotMetaMean <- function(l, p = 0.95, stepsize=0.1) {
 
   dm <- rbind(dm0, dm, dmN)
 
-  p <- ggplot2::ggplot(d, aes(x, y, color=n, fill=n)) + geom_line() + facet_grid(kind~., scales = "free")
-  p <- p + geom_polygon(data=dm)
-  p + geom_vline(xintercept=l$mean)
+  p <- ggplot2::ggplot(d, ggplot2::aes(x, y, color=n, fill=n)) + ggplot2::geom_line() + ggplot2::facet_grid(kind~., scales = "free")
+  p <- p + ggplot2::geom_polygon(data=dm)
+  p + ggplot2::geom_vline(xintercept=l$mean)
 }
 
