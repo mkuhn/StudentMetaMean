@@ -50,7 +50,7 @@ lfCombineMean <- function(mean_total, likelihood_functions) {
 
 
 #' @export
-studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NULL, min_sigma = 1) {
+studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NULL, min_sigma = 0.01) {
 
   if (is.null(design)) {
     if (any(is.null(means), is.null(sigmas), is.null(nus)))
