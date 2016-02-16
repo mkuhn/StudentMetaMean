@@ -68,7 +68,7 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
   INF <- .Machine$double.xmax/(1+length(likelihood_functions))
 
   # first optimisation: find best sigma
-  o1 <- optimize(lfMetaMean, interval = safe_range(c(min_sigma, sd(means))),
+  o1 <- optimize(lfMetaMean, interval = safe_range(c(min_sigma, max(1.5*min_sigma, sd(means)))),
           maximum = T,
           mean_total = mean_of_means,
           means = means,
