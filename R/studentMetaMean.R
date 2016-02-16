@@ -29,7 +29,7 @@ getLF <- function(row) {
   if (is.na(nu)) {
     # normal distribution
 
-    D0 <- -dnorm(means, means, sigmas, log=T)
+    D0 <- 0 #-dnorm(means, means, sigmas, log=T)
 
     list(
       # Exact density function
@@ -96,7 +96,7 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
   INF <- .Machine$double.xmax/(1+length(likelihood_functions))
 
   # first optimisation using both free mean and sigma to find best sigma
-  o1 <- optim(c(mean(design_matrix[,1]), sd(design_matrix[,1])),
+  o1 <- optim(c(mean(design_matrix[,1]), max(1.5*min_sigma, sd(design_matrix[,1]))),
         lfMetaMean,
         likelihood_functions = likelihood_functions,
         INF = INF,
@@ -201,15 +201,18 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
 }
 
 #' @export
-plotMetaMean <- function(l, p = 0.95, stepsize=NULL) {
+plotMetaMean <- function(l, p = 0.95, stepsize=NULL, xmin=NULL, xmax=NULL) {
+
+  if (is.null(xmin)) xmin <- l$xmin
+  if (is.null(xmax)) xmax <- l$xmax
 
   if (is.null(stepsize)) {
-    stepsize <- (l$xmax - l$xmin) / 1000
+    stepsize <- (xmax - xmin) / 1000
   }
 
   likelihood_functions <- l$likelihood_functions
-  xmin <- floor(l$xmin/stepsize)*stepsize
-  xmax <- ceiling(l$xmax/stepsize)*stepsize
+  xmin <- floor(xmin/stepsize)*stepsize
+  xmax <- ceiling(xmax/stepsize)*stepsize
 
   X <- seq(xmin, xmax, stepsize)
 
@@ -222,19 +225,24 @@ plotMetaMean <- function(l, p = 0.95, stepsize=NULL) {
 
   hdi <- findHDI(l, p, stepsize)
 
+  have_hdi <- hdi[1] < hdi[2]
+
   d$n <- factor(d$n)
-  dm <- d[ d$n == 0, ]
-  dm <- dm[ dm$x >= hdi[1] & dm$x <= hdi[2], ]
 
-  dm0 <- dm[1,]
-  dm0$y <- 0
-  dmN <- dm[nrow(dm),]
-  dmN$y <- 0
+  if (have_hdi) {
+    dm <- d[ d$n == 0, ]
+    dm <- dm[ dm$x >= hdi[1] & dm$x <= hdi[2], ]
 
-  dm <- rbind(dm0, dm, dmN)
+    dm0 <- dm[1,]
+    dm0$y <- 0
+    dmN <- dm[nrow(dm),]
+    dmN$y <- 0
+
+    dm <- rbind(dm0, dm, dmN)
+  }
 
   p <- ggplot2::ggplot(d, ggplot2::aes(x, y, color=n, fill=n)) + ggplot2::geom_line() + ggplot2::facet_grid(kind~., scales = "free")
-  p <- p + ggplot2::geom_polygon(data=dm)
+  if (have_hdi) p <- p + ggplot2::geom_polygon(data=dm)
   p + ggplot2::geom_vline(xintercept=l$mean)
 }
 
