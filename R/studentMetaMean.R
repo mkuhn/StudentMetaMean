@@ -1,12 +1,8 @@
 #' @useDynLib studentMetaMean
 #' @importFrom Rcpp sourceCpp
 
-dstudent <- function(x, nu, mean, sigma, log = FALSE) {
-  if (log) {
-    dt((x-mean)/sigma, nu, log=T)-log(sigma)
-  } else {
-    dt((x-mean)/sigma, nu, log=F)/sigma
-  }
+log_dstudent <- function(x, nu, mean, sigma) {
+  dt((x-mean)/sigma, nu, log=T)-log(sigma)
 }
 
 qstudent <- function(p, nu, mean, sigma) (qt(p, nu)*sigma+mean)
@@ -22,60 +18,37 @@ safe_range <- function(v) {
 
 getLF <- function(row) {
 
-  means <- row[1]
-  sigmas <- row[2]
+  m <- row[1]
+  sigma <- row[2]
   nu <- row[3]
 
   if (is.na(nu)) {
     # normal distribution
-
-    D0 <- 0 #-dnorm(means, means, sigmas, log=T)
-
     list(
-      # Exact density function
-      exact = function(x) -dnorm(x, means, sigmas, log=T),
-      # Exact calculation of product of Student's t and normal distribution
-      exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
-      means = means,
-      sigmas = sigmas,
-      nu = nu,
-      xmin = qnorm(0.005, means, sigmas),
-      xmax = qnorm(1-0.005, means, sigmas)
+      density = function(x) dnorm(x, m, sigma, log=T),
+      xmin = qnorm(0.005, m, sigma),
+      xmax = qnorm(1-0.005, m, sigma)
     )
 
   } else {
     # Student's t distribution
 
-    D0 <- -dstudent(means, nu, means, sigmas, log=T)
-
     list(
-      # Exact density function
-      exact = function(x) -dstudent(x, nu, means, sigmas, log=T),
-      # Exact calculation of product of Student's t and normal distribution
-      exact_sum = function(mean, sigma) D0-dnorm(means, mean, sigma, log=T),
-      means = means,
-      sigmas = sigmas,
-      nu = nu,
-      xmin = qstudent(0.005, nu, means, sigmas),
-      xmax = qstudent(1-0.005, nu, means, sigmas)
+      density = function(x) log_dstudent(x, nu, m, sigma),
+      xmin = qstudent(0.005, nu, m, sigma),
+      xmax = qstudent(1-0.005, nu, m, sigma)
     )
   }
 }
 
 
-lfMetaMean <- function(P, likelihood_functions, INF, min_sigma) {
-  mean_total <- P[[1]]
-  sigma_total <- P[[2]]
-
-  if (sigma_total < min_sigma) return(INF)
-
-  L <- lapply(likelihood_functions, function(l) l$exact_sum( mean_total, sigma_total ))
-
-  Reduce("+", L) - log(sigma_total)
+lfMetaMean <- function(sigma_total, mean_total, means, INF, min_sigma) {
+  if (sigma_total < min_sigma) return(-INF)
+  sapply(mean_total, function(m) sum(dnorm(m, means, sigma_total, log=T))) + log(sigma_total)
 }
 
 lfCombineMean <- function(mean_total, likelihood_functions) {
-  Reduce("+", lapply(likelihood_functions, function(l) l$exact(mean_total)))
+  Reduce("+", lapply(likelihood_functions, function(l) l$density(mean_total)))
 }
 
 
@@ -92,25 +65,28 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
   }
 
   likelihood_functions <- apply(design_matrix, 1, getLF)
+  means <- design_matrix[, 1]
+  mean_of_means <- mean(means)
 
   INF <- .Machine$double.xmax/(1+length(likelihood_functions))
 
-  # first optimisation using both free mean and sigma to find best sigma
-  o1 <- optim(c(mean(design_matrix[,1]), max(1.5*min_sigma, sd(design_matrix[,1]))),
-        lfMetaMean,
-        likelihood_functions = likelihood_functions,
-        INF = INF,
-        min_sigma = min_sigma
-      )
+  # first optimisation: find best sigma
+  o1 <- optimize(lfMetaMean, interval = safe_range(c(min_sigma, sd(means))),
+          maximum = T,
+          mean_total = mean_of_means,
+          means = means,
+          INF = INF,
+          min_sigma = min_sigma
+        )
 
-  sigma_total <- o1$par[2]
+  sigma_total <- o1$maximum
 
   pMerged <- function(mean_total) {
-    exp(-lfMetaMean(list(mean_total, sigma_total), likelihood_functions, INF, min_sigma)) +
-      exp(-lfCombineMean(mean_total, likelihood_functions))
+    exp(lfMetaMean(sigma_total, mean_total, means, INF, min_sigma)) +
+      exp(lfCombineMean(mean_total, likelihood_functions))
   }
 
-  # second optimisation:
+  # second optimisation: find best mean
   o2 <- optimise(pMerged, safe_range(design_matrix[,1]), maximum = T)
 
   l <- list(
@@ -118,8 +94,8 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
     xmax = max(sapply(likelihood_functions, function(l) l$xmax)),
     mean = o2$maximum,
     sigma = sigma_total,
-    likelihood_functions = likelihood_functions,
-    pMerged = pMerged
+    pMerged = pMerged,
+    likelihood_functions = likelihood_functions
   )
   l
 }
@@ -219,7 +195,7 @@ plotMetaMean <- function(l, p = 0.95, stepsize=NULL, xmin=NULL, xmax=NULL) {
   d <- rbind(
     data.frame(x=X, y=l$pMerged(X), kind="metaMean", n = 0),
     do.call(rbind, lapply(1:length(likelihood_functions),
-         function(i) data.frame(x=X, y=exp(-likelihood_functions[[i]]$exact(X)), kind="input", n = i))
+         function(i) data.frame(x=X, y=exp(likelihood_functions[[i]]$density(X)), kind="input", n = i))
     )
   )
 
