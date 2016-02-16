@@ -1,6 +1,3 @@
-#' @useDynLib studentMetaMean
-#' @importFrom Rcpp sourceCpp
-
 log_dstudent <- function(x, nu, mean, sigma) {
   dt((x-mean)/sigma, nu, log=T)-log(sigma)
 }
@@ -32,7 +29,6 @@ getLF <- function(row) {
 
   } else {
     # Student's t distribution
-
     list(
       density = function(x) log_dstudent(x, nu, m, sigma),
       xmin = qstudent(0.005, nu, m, sigma),
@@ -41,12 +37,13 @@ getLF <- function(row) {
   }
 }
 
-
+# Likelihood that the distribution means are part of a normal distribution
 lfMetaMean <- function(sigma_total, mean_total, means, INF, min_sigma) {
   if (sigma_total < min_sigma) return(-INF)
   sapply(mean_total, function(m) sum(dnorm(m, means, sigma_total, log=T))) + log(sigma_total)
 }
 
+# Likelihood that the distributions have one common mean
 lfCombineMean <- function(mean_total, likelihood_functions) {
   Reduce("+", lapply(likelihood_functions, function(l) l$density(mean_total)))
 }
