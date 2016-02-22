@@ -78,8 +78,9 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
   sigma_total <- max(min_sigma, sd(means))
 
   pMerged <- function(mean_total) {
-    exp(lfMetaMean(sigma_total, mean_total, means, INF, min_sigma)) +
-      exp(dstud(mean_total, means, nus, sigmas, log_beta_precomp))
+    dcombined(mean_total, means, sigma_total, nus, sigmas, log_beta_precomp)
+    # exp(lfMetaMean(sigma_total, mean_total, means, INF, min_sigma)) +
+    #   exp(dstud(mean_total, means, nus, sigmas, log_beta_precomp))
       # exp(lfCombineMean(mean_total, likelihood_functions))
   }
 
