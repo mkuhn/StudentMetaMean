@@ -63,33 +63,23 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
 
   likelihood_functions <- apply(design_matrix, 1, getLF)
   means <- design_matrix[, 1]
-  mean_of_means <- mean(means)
 
   INF <- .Machine$double.xmax/(1+length(likelihood_functions))
 
-  # first optimisation: find best sigma
-  o1 <- optimize(lfMetaMean, interval = safe_range(c(min_sigma, max(1.5*min_sigma, sd(means)))),
-          maximum = T,
-          mean_total = mean_of_means,
-          means = means,
-          INF = INF,
-          min_sigma = min_sigma
-        )
-
-  sigma_total <- o1$maximum
+  sigma_total <- max(min_sigma, sd(means))
 
   pMerged <- function(mean_total) {
     exp(lfMetaMean(sigma_total, mean_total, means, INF, min_sigma)) +
       exp(lfCombineMean(mean_total, likelihood_functions))
   }
 
-  # second optimisation: find best mean
-  o2 <- optimise(pMerged, safe_range(design_matrix[,1]), maximum = T)
+  # find best mean
+  o <- optimise(pMerged, safe_range(design_matrix[,1]), maximum = T)
 
   l <- list(
     xmin = min(sapply(likelihood_functions, function(l) l$xmin)),
     xmax = max(sapply(likelihood_functions, function(l) l$xmax)),
-    mean = o2$maximum,
+    mean = o$maximum,
     sigma = sigma_total,
     pMerged = pMerged,
     likelihood_functions = likelihood_functions
