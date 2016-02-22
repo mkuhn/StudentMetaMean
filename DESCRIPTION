@@ -14,3 +14,5 @@ Description: Given a set of Student's t distribution (that could come from
 License: BSD
 LazyData: TRUE
 RoxygenNote: 5.0.1
+LinkingTo: Rcpp
+Imports: Rcpp

@@ -1,3 +1,6 @@
+#' @useDynLib studentMetaMean
+#' @importFrom Rcpp sourceCpp
+
 log_dstudent <- function(x, nu, mean, sigma) {
   dt((x-mean)/sigma, nu, log=T)-log(sigma)
 }
@@ -40,7 +43,8 @@ getLF <- function(row) {
 # Likelihood that the distribution means are part of a normal distribution
 lfMetaMean <- function(sigma_total, mean_total, means, INF, min_sigma) {
   if (sigma_total < min_sigma) return(-INF)
-  sapply(mean_total, function(m) sum(dnorm(m, means, sigma_total, log=T))) + log(sigma_total)
+  dnorms(mean_total, means, sigma_total)
+  # sapply(mean_total, function(m) sum(dnorm(m, means, sigma_total, log=T))) + log(sigma_total)
 }
 
 # Likelihood that the distributions have one common mean
@@ -63,6 +67,11 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
 
   likelihood_functions <- apply(design_matrix, 1, getLF)
   means <- design_matrix[, 1]
+  sigmas <- design_matrix[, 2]
+  nus <- design_matrix[, 3]
+  log_beta_precomp <- log(beta(nus/2, 0.5))
+
+  nus[ is.na(nus) ] <- 0
 
   INF <- .Machine$double.xmax/(1+length(likelihood_functions))
 
@@ -70,7 +79,8 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
 
   pMerged <- function(mean_total) {
     exp(lfMetaMean(sigma_total, mean_total, means, INF, min_sigma)) +
-      exp(lfCombineMean(mean_total, likelihood_functions))
+      exp(dstud(mean_total, means, nus, sigmas, log_beta_precomp))
+      # exp(lfCombineMean(mean_total, likelihood_functions))
   }
 
   # find best mean
@@ -164,6 +174,14 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
 }
 
 #' @export
+pMetaMean <- function(l, p) {
+  tol <- l$pMerged(p)
+  A <- integrate( l$pMerged, -Inf, p, abs.tol = tol  )$value
+  B <- integrate( l$pMerged, p, Inf, abs.tol = tol  )$value
+  A / (A+B)
+}
+
+#' @export
 plotMetaMean <- function(l, p = 0.95, stepsize=NULL, xmin=NULL, xmax=NULL) {
 
   if (is.null(xmin)) xmin <- l$xmin
@@ -208,4 +226,3 @@ plotMetaMean <- function(l, p = 0.95, stepsize=NULL, xmin=NULL, xmax=NULL) {
   if (have_hdi) p <- p + ggplot2::geom_polygon(data=dm)
   p + ggplot2::geom_vline(xintercept=l$mean)
 }
-
