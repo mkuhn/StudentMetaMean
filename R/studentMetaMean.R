@@ -40,19 +40,6 @@ getLF <- function(row) {
   }
 }
 
-# Likelihood that the distribution means are part of a normal distribution
-lfMetaMean <- function(sigma_total, mean_total, means, INF, min_sigma) {
-  if (sigma_total < min_sigma) return(-INF)
-  dnorms(mean_total, means, sigma_total)
-  # sapply(mean_total, function(m) sum(dnorm(m, means, sigma_total, log=T))) + log(sigma_total)
-}
-
-# Likelihood that the distributions have one common mean
-lfCombineMean <- function(mean_total, likelihood_functions) {
-  Reduce("+", lapply(likelihood_functions, function(l) l$density(mean_total)))
-}
-
-
 #' @export
 studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NULL, min_sigma = 0.01) {
 
@@ -79,9 +66,6 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
 
   pMerged <- function(mean_total) {
     dcombined(mean_total, means, sigma_total, nus, sigmas, log_beta_precomp)
-    # exp(lfMetaMean(sigma_total, mean_total, means, INF, min_sigma)) +
-    #   exp(dstud(mean_total, means, nus, sigmas, log_beta_precomp))
-      # exp(lfCombineMean(mean_total, likelihood_functions))
   }
 
   # find best mean
@@ -175,11 +159,34 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
 }
 
 #' @export
-pMetaMean <- function(l, p) {
+pMetaMean <- function(l, p, return_log=F) {
   tol <- l$pMerged(p)
-  A <- integrate( l$pMerged, -Inf, p, abs.tol = tol  )$value
-  B <- integrate( l$pMerged, p, Inf, abs.tol = tol  )$value
-  A / (A+B)
+  A <- integrate(l$pMerged, -Inf, p, abs.tol = tol, stop.on.error = F)
+
+  v <- NULL
+
+  if (A$message != "OK" || A$abs.error == 0) {
+    message(paste("Integration error -- we're in the long tail:", A$message))
+    v <- p > l$mean
+  }
+
+  B <- integrate(l$pMerged, p, Inf, abs.tol = tol, stop.on.error = F)
+  if (B$message != "OK" || B$abs.error == 0) {
+    message(paste("Integration error -- we're in the long tail:", B$message))
+    v <- p > l$mean
+  }
+
+  if (is.null(v)) {
+    if (return_log) {
+      v <- log(A$value) - log(A$value+B$value)
+    } else {
+      v <- A$value / (A$value+B$value)
+    }
+  } else if (return_log) {
+    v <- log(v)
+  }
+
+  v
 }
 
 #' @export
