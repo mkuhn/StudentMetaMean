@@ -1,11 +1,11 @@
 Package: studentMetaMean
 Type: Package
 Title: Calculate Weighted Mean of Student's t Distributions
-Version: 0.1
-Date: 2016-02-01
+Version: 0.1.0
+Date: 2016-03-21
 Author: Michael Kuhn
 Maintainer: Michael Kuhn <michael.kuhn@gmail.com>
-Description: Given a set of Student's t distribution (that could come from
+Description: Given a set of Student's t distribution (e.g. from
   outlier-robust fitting of data), this package computes a weighted mean
   from the given measurements. If the distributions overlap largely, then
   it is assumed that there is no significant error between the measurements.

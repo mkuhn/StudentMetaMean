@@ -159,7 +159,7 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
 }
 
 #' @export
-pMetaMean <- function(l, p, return_log=F) {
+pMetaMean <- function(l, p, return_pvalue = F) {
   tol <- l$pMerged(p)
   A <- integrate(l$pMerged, -Inf, p, abs.tol = tol, stop.on.error = F)
 
@@ -167,23 +167,33 @@ pMetaMean <- function(l, p, return_log=F) {
 
   if (A$message != "OK" || A$abs.error == 0) {
     message(paste("Integration error -- we're in the long tail:", A$message))
-    v <- p > l$mean
+    if (return_pvalue) {
+      v <- 0
+    } else {
+      v <- p > l$mean
+    }
   }
 
   B <- integrate(l$pMerged, p, Inf, abs.tol = tol, stop.on.error = F)
   if (B$message != "OK" || B$abs.error == 0) {
     message(paste("Integration error -- we're in the long tail:", B$message))
-    v <- p > l$mean
+    if (return_pvalue) {
+      v <- 0
+    } else {
+      v <- p > l$mean
+    }
   }
 
   if (is.null(v)) {
-    if (return_log) {
-      v <- log(A$value) - log(A$value+B$value)
+    if (return_pvalue) {
+      if (A$value < B$value) {
+        v <- A$value / (A$value+B$value)
+      } else {
+        v <- B$value / (A$value+B$value)
+      }
     } else {
       v <- A$value / (A$value+B$value)
     }
-  } else if (return_log) {
-    v <- log(v)
   }
 
   v
