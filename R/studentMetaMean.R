@@ -40,6 +40,25 @@ getLF <- function(row) {
   }
 }
 
+
+#' Compute a weighted average of the specified distributions
+#'
+#' @param design A matrix with the named columns \code{mean}, \code{sigma}, and \code{nu}. Can be omitted,
+#'  if the following three parameters are supplied.
+#' @param means Vector of means
+#' @param sigmas Vector of sigmas
+#' @param nus Vector of nus
+#' @param min_sigma Minimum sigma of resulting distribution when all means are very close together
+#'
+#' @return A list with the following values:
+#'  \itemize{
+#'    \item{\code{xmin}}{ effective lower end of probality distribution}
+#'    \item{\code{xmax}}{ effective upper end of probality distribution}
+#'    \item{\code{mean}}{ weighted mean}
+#'    \item{\code{pMerged}}{ combined probability distribution}
+#'    \item{\code{likelihood_functions}}{ the individual likelihood function for the supplied distributions}
+#'  }
+#'
 #' @export
 studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NULL, min_sigma = 0.01) {
 
@@ -75,15 +94,25 @@ studentMetaMean <- function(design = NULL, means = NULL, sigmas = NULL, nus = NU
     xmin = min(sapply(likelihood_functions, function(l) l$xmin)),
     xmax = max(sapply(likelihood_functions, function(l) l$xmax)),
     mean = o$maximum,
-    sigma = sigma_total,
     pMerged = pMerged,
     likelihood_functions = likelihood_functions
   )
   l
 }
 
+#' Find the highest density interval(s)
+#'
+#' @param l a result list returned by \code{studentMetaMean}
+#' @param p a single percentage or a vector of percentages for which to return the HDI
+#' @param stepsize size of steps along the x axis
+#' @param density_resolution cutoff for sampling the distribution, given as the fraction of
+#'   the density at the mean
+#' @param drop return a vector instead of a matrix for a single target percentage
+#'
+#' @return Either a vector (low, high) or a matrix with each row containing a (low, high) pair
+#'
 #' @export
-findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
+findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001, drop = T) {
 
   xmid <- round(l$mean/stepsize)*stepsize
 
@@ -100,7 +129,13 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
   Y <- l$pMerged(X)
   N <- length(Y)
 
-  target <- p*(sum(Y, na.rm=T))
+  N_p <- length(p)
+
+  p_order <- order(p)
+  p_in_order <- p[p_order]
+  targets <- p_in_order*(sum(Y, na.rm=T))
+  target_i <- numeric(N_p)
+  target_j <- numeric(N_p)
 
   mid <- as.integer((xmid-xmin)/stepsize+1)
 
@@ -110,54 +145,69 @@ findHDI <- function(l, p = 0.95, stepsize = 0.01, density_resolution = 0.001) {
   vj <- Y[j]
 
   s <- 0
+  p_idx <- 1
 
-  while (s < target) {
-    if (vi > vj) {
-      i <- i-1
+  while (p_idx <= N_p) {
+    while (s < targets[p_idx]) {
+      if (vi > vj) {
+        i <- i-1
 
-      # extend the range if needed
-      if (i == 0) {
-        ext <- as.integer(N/2)
-        xminext <- xmin - stepsize * ext
-        Xext <- seq(xminext, xmin-stepsize, stepsize)
-        X <- c(Xext, X)
-        Y <- c(l$pMerged(Xext), Y)
-        xmin <- xminext
-        i <- i + ext
-        j <- j + ext
-        N <- N + ext
-        target <- p*(sum(Y, na.rm=T))
+        # extend the range if needed
+        if (i == 0) {
+          ext <- as.integer(N/2)
+          xminext <- xmin - stepsize * ext
+          Xext <- seq(xminext, xmin-stepsize, stepsize)
+          X <- c(Xext, X)
+          Y <- c(l$pMerged(Xext), Y)
+          xmin <- xminext
+          i <- i + ext
+          j <- j + ext
+          N <- N + ext
+          targets <- p_in_order*(sum(Y, na.rm=T))
+        }
+
+        s <- s + vi/2
+        vi <- Y[i]
+        s <- s + vi/2
+      } else {
+        j <- j+1
+
+        # extend the range if needed
+        if (j > N) {
+          ext <- as.integer(N/2)
+          xmaxext <- xmax + stepsize * ext
+          Xext <- seq(xmax+stepsize, xmaxext, stepsize)
+          X <- c(X, Xext)
+          Y <- c(Y, l$pMerged(Xext))
+          xmax <- xmaxext
+          N <- N + ext
+          targets <- p_in_order*(sum(Y, na.rm=T))
+        }
+
+        s <- s + vj/2
+        vj <- Y[j]
+        s <- s + vj/2
       }
-
-      s <- s + vi/2
-      vi <- Y[i]
-      s <- s + vi/2
-    } else {
-      j <- j+1
-
-      # extend the range if needed
-      if (j > N) {
-        ext <- as.integer(N/2)
-        xmaxext <- xmax + stepsize * ext
-        Xext <- seq(xmax+stepsize, xmaxext, stepsize)
-        X <- c(X, Xext)
-        Y <- c(Y, l$pMerged(Xext))
-        xmax <- xmaxext
-        N <- N + ext
-        target <- p*(sum(Y, na.rm=T))
-      }
-
-      s <- s + vj/2
-      vj <- Y[j]
-      s <- s + vj/2
     }
+
+    idx <- p_order[p_idx]
+    target_i[idx] <- i
+    target_j[idx] <- j
+    p_idx <- p_idx + 1
   }
 
-  if (j-i < 10) message("Step size may be too small!")
+  if (min(target_j-target_i) < 10) message("Step size may be too small!")
 
-  c( xmin+stepsize*(i-0.5), xmin + stepsize*(j-0.5))
+  result <- matrix( c(xmin+stepsize*(target_i-0.5), xmin + stepsize*(target_j-0.5)), ncol = 2)
+
+  if (N_p == 1 && drop) {
+    result <- result[1,]
+  }
+
+  result
 }
 
+#' Compute a value in the cumulative distribution function
 #' @export
 pMetaMean <- function(l, p, return_pvalue = F) {
   tol <- l$pMerged(p)
@@ -199,6 +249,7 @@ pMetaMean <- function(l, p, return_pvalue = F) {
   v
 }
 
+#' Plot both the individual distributions and the combined distribution.
 #' @export
 plotMetaMean <- function(l, p = 0.95, stepsize=NULL, xmin=NULL, xmax=NULL) {
 
