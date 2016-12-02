@@ -1,0 +1,35 @@
+---
+title: "Explanation of statistical approach"
+author: "Michael Kuhn"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Combination of means across distributions with different uncertainty
+
+All distributions are converted into likelihood functions, and the approximate range of the individual distributions is estimated.
+
+$$\sigma = \max(\sigma_{\min}, \text{sd}(\mu_i))$$
+
+
+
+### Selection of mean
+
+Given the likelihood functions $l_i$, the original means $\mu_i$, and the fixed standard deviation of the original means $\sigma$, we can compute a likelihood. We are adding the relative contributions from the original distributions and from the hypothetical normal distribution around the mean:
+
+$$ L(\mu|l_1,...,l_N, \mu_1,...\mu_N, \sigma) = \prod_i l_i(\mu) + \sigma \prod_i\frac{1}{\sigma\sqrt{2\pi}}\, e^{-\frac{(\mu_i - \mu)^2}{2 \sigma^2}} $$
+
+$$ L(\mu, \sigma|...) = \exp \left( \sum_i \log l_i(\mu) \right) + \exp \left( - \log (\sigma\sqrt{2\pi}) - \frac{\sum_i (\mu_i - \mu)^2}{2\sigma^2} -(N-1)\log\sigma \right)$$
+
+
+First, this likelihood is maximized to find the combined mean $\mu$.
+
+
+### Computing the HDI
+
+$L(\mu, \sigma|...)$ is treated as a density that is integrated numerically across the range of the underlying distributions.
+

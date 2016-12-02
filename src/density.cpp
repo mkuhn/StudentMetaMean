@@ -7,7 +7,7 @@ using namespace Rcpp;
 const double offset = (-log(2)-log(M_PI))/2;
 const double df_limit_switch_to_normal = 10000;
 
-
+// Density of normal or Student's t-distribution
 inline double student_normal_pdf(const double& x, const double& sigma, const double& nu, const double& log_beta_precomp)
 // // For testing:
 // // [[Rcpp::export]]
@@ -69,7 +69,7 @@ print(student_normal_pdf(x, sigma, 0, NA))
 
 
 
-
+// Combined density of individual Student's t-distribution and overlapping distribution of means
 // [[Rcpp::export]]
 NumericVector dcombined(NumericVector mean1, NumericVector mean2, double sigma_normal, NumericVector nu,
                     NumericVector sigma, NumericVector log_beta_precomp) {

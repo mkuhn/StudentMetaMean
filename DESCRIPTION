@@ -17,3 +17,6 @@ RoxygenNote: 5.0.1
 LinkingTo: Rcpp
 Imports: Rcpp
 SystemRequirements: C++11
+Suggests: knitr,
+    rmarkdown
+VignetteBuilder: knitr
